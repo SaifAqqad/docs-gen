@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "defaultProvider": "jsdelivr",
+  "defaultDestination": "./js",
+  "libraries": [
+    {
+      "library": "comment-parser@1.4.1",
+      "destination": "js/comment-parser"
+    }
+  ]
+}
