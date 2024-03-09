@@ -6,6 +6,10 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+var defaultJsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.General) { WriteIndented = true };
+var config = JsonSerializer.Deserialize<Config>(File.ReadAllText("config.json"), defaultJsonOptions)!;
+DocStringExtensions.BaseUri = config.BaseUri?.TrimEnd('/', '\\') ?? ".";
+
 var jsEngine = new Engine(options =>
 {
     options.EnableModules(@$"{Environment.CurrentDirectory}\js");
@@ -17,23 +21,27 @@ var defaultJsDocOptions = JsValue.FromObject(jsEngine, new
     spacing = "preserve" // Keep spaces/newlines in the comments
 });
 
-Console.Write("Enter the path to the AHK JSON file: ");
-var ahkJsonFilePath = Console.ReadLine();
-
-if (!File.Exists(ahkJsonFilePath))
+if (!File.Exists(config.JsonFile))
 {
-    Console.WriteLine("File not found");
+    Console.WriteLine($"JSON file {config.JsonFile} not found");
     return -1;
 }
 
-var ahkJson = JsonNode.Parse(File.ReadAllText(ahkJsonFilePath))!.AsObject();
+if (string.IsNullOrWhiteSpace(config.OutputDir))
+{
+    Console.WriteLine("Output directory not specified in config.json");
+    return -2;
+}
+
+// Ensure the output directory exists
+Directory.CreateDirectory(config.OutputDir);
+
+var ahkJson = JsonNode.Parse(File.ReadAllText(config.JsonFile))!.AsObject();
 var ahkClasses = new Dictionary<string, AhkClass>();
 
 // Go through each file in the AHK JSON
-foreach (var (fileName, content) in ahkJson)
+foreach (var (_, content) in ahkJson)
 {
-    Console.WriteLine($"Processing {fileName}...");
-
     // Go through each class in the file
     if (content?["classes"]?.AsArray() is JsonArray classes)
     {
@@ -42,12 +50,73 @@ foreach (var (fileName, content) in ahkJson)
             ProcessAhkClass(classObj);
         }
     }
-
-    // TODO: maybe process functions and variables?
 }
 
-// TODO: Generate markdown docs for each class and output to files
-File.WriteAllText(Path.ChangeExtension(ahkJsonFilePath, ".processed.json"), JsonSerializer.Serialize(ahkClasses, new JsonSerializerOptions { WriteIndented = true }));
+if (config.OutputProcessedJson)
+{
+    var processedJsonPath = Path.ChangeExtension(config.JsonFile, ".processed.json");
+    File.WriteAllText(processedJsonPath, JsonSerializer.Serialize(ahkClasses, defaultJsonOptions));
+    Console.WriteLine($"Processed JSON written to {processedJsonPath}");
+}
+
+foreach (var (className, ahkClass) in ahkClasses)
+{
+    var classDoc = new StringBuilder(
+        $$"""
+          # `{{className}}`  <!-- {docsify-ignore-all} -->
+
+          {{ahkClass.Description.Indent(1)}}
+          """
+    ).AppendLine();
+
+    if (ahkClass.Extends != null)
+    {
+        classDoc.AppendLine($"\n#### Extends: {TypeDisplay(ahkClass.Extends)}");
+    }
+
+    if (ahkClass.Constructor != null && !string.IsNullOrWhiteSpace(ahkClass.Constructor.Description))
+    {
+        var header = $"## Constructor `{ahkClass.Constructor.Name}({string.Join(", ", ahkClass.Constructor.Parameters)})` {HeaderId("constructor")}";
+
+        classDoc.AppendLine(MethodDocs(ahkClass.Constructor, header).Trim());
+        classDoc.AppendLine();
+    }
+
+    var properties = ahkClass.Properties.Where(p => !p.Name.IsUpperCase()).ToList();
+    if (properties.Count > 0)
+    {
+        classDoc.AppendLine("\n## Properties");
+        foreach (var property in properties)
+        {
+            classDoc.AppendLine(
+                $"""
+                 * #### {(property.IsStatic ? "**Static** " : string.Empty)}`{property.Name}` : {TypeDisplay(property.Type)} {HeaderId($"{(property.IsStatic ? "static-" : string.Empty)}{property.Name}")}
+                 {property.Description.Indent(1)}
+                 """.Trim()
+            );
+        }
+    }
+
+    if (ahkClass.Methods.Count > 0)
+    {
+        classDoc.AppendLine("\n## Methods");
+        foreach (var method in ahkClass.Methods)
+        {
+            var header = $"* ### `{method.Name}({string.Join(", ", method.Parameters)})` {HeaderId($"{(method.Static ? "static-" : string.Empty)}{method.Name}")}";
+            classDoc.AppendLine(MethodDocs(method, header));
+            classDoc.AppendLine("\n______");
+        }
+    }
+
+    var classFilePath = Path.Combine(config.OutputDir, $"{className.ToLower()}.md");
+    var markdownContent = classDoc.ToString()
+        .NormalizeLineEndings()
+        .Trim('_', '-', ' ', '\t', '\n');
+
+    File.WriteAllText(classFilePath, markdownContent);
+    Console.WriteLine($"Docs for {className} written to {classFilePath}");
+}
+
 return 0;
 
 void ProcessAhkClass(JsonNode? classObj)
@@ -87,11 +156,11 @@ void ProcessAhkClass(JsonNode? classObj)
 
         if (seeTags.Length > 0)
         {
-            var seeBuilder = new StringBuilder("**See also:**\n");
+            var seeBuilder = new StringBuilder("**See also**:\n");
 
             foreach (var seeTag in seeTags)
             {
-                seeBuilder.AppendLine($"- {{{seeTag["type"]}}} {seeTag["name"]} {seeTag["description"]}".Trim().ParseDescription().NormalizeLineEndings());
+                seeBuilder.AppendLine($"- {$"{{{seeTag["type"]}}} {seeTag["name"]} {seeTag["description"]}".Trim().ParseDescription().NormalizeLineEndings()}");
             }
 
             ahkClass.Description = $"""
@@ -140,7 +209,7 @@ List<AhkMethod> ProcessAhkMethods(JsonArray? methods)
 
         // Exclude private methods (but include the constructor)
         var isPrivate = method.Name.StartsWith('_') && method.Name != "__New";
-        Console.WriteLine($"Processing method {method.Name}...");
+        Console.WriteLine($"\tProcessing method {method.Name}...");
 
         var parameters = methodJson["params"]?.AsArray() ?? [];
         foreach (var param in parameters)
@@ -183,7 +252,7 @@ List<AhkMethod> ProcessAhkMethods(JsonArray? methods)
                     continue;
                 }
 
-                param.Type = paramTag["type"].ToString();
+                param.Type = string.IsNullOrWhiteSpace(paramTag["type"].ToString()) ? null : paramTag["type"].ToString();
                 param.Description = paramTag["description"].ToString().ParseDescription().NormalizeLineEndings();
             }
 
@@ -210,7 +279,7 @@ List<AhkMethod> ProcessAhkMethods(JsonArray? methods)
             var seeTags = tags.Where(t => t["tag"].ToString() == "see").ToArray();
             if (seeTags.Length > 0)
             {
-                var seeBuilder = new StringBuilder("**See also:**\n");
+                var seeBuilder = new StringBuilder("**See also**:\n");
 
                 foreach (var seeTag in seeTags)
                 {
@@ -253,7 +322,7 @@ List<AhkProperty> ProcessAhkProperties(JsonArray? properties)
 
         // Exclude private properties
         var isPrivate = property.Name.StartsWith('_');
-        Console.WriteLine($"Processing property {property.Name}...");
+        Console.WriteLine($"\tProcessing property {property.Name}...");
 
         var parameters = propertyJson["params"]?.AsArray() ?? [];
         foreach (var param in parameters)
@@ -301,14 +370,14 @@ List<AhkProperty> ProcessAhkProperties(JsonArray? properties)
                     continue;
                 }
 
-                param.Type = paramTag["type"].ToString();
+                param.Type = string.IsNullOrWhiteSpace(paramTag["type"].ToString()) ? null : paramTag["type"].ToString();
                 param.Description = paramTag["description"].ToString().ParseDescription().NormalizeLineEndings();
             }
 
             var seeTags = tags.Where(t => t["tag"].ToString() == "see").ToArray();
             if (seeTags.Length > 0)
             {
-                var seeBuilder = new StringBuilder("**See also:**\n");
+                var seeBuilder = new StringBuilder("**See also**:\n");
 
                 foreach (var seeTag in seeTags)
                 {
@@ -330,6 +399,56 @@ List<AhkProperty> ProcessAhkProperties(JsonArray? properties)
     }
 
     return ahkProperties;
+}
+
+string MethodDocs(AhkMethod method, string header)
+{
+    var methodBuilder = new StringBuilder(header).AppendLine();
+    methodBuilder.AppendLine($"{method.Description.Indent(1)}\n");
+
+    if (method.Parameters.Count > 0)
+    {
+        methodBuilder.AppendLine("**Parameters**:".Indent(1));
+        foreach (var parameter in method.Parameters)
+        {
+            var optionalLabel = parameter.IsOptional ? "**Optional** " : string.Empty;
+            var description = string.IsNullOrWhiteSpace(parameter.Description) ? string.Empty : $" - {parameter.Description.Indent(1).Trim()}"
+                .Replace("(Optional) ", string.Empty);
+
+            var paramDocs = $"- {optionalLabel}`{parameter.Name}` : {TypeDisplay(parameter.Type ?? "Any")}{description}";
+            methodBuilder.AppendLine($"{paramDocs.Indent(1)}\n");
+        }
+    }
+
+    if (method.Throws.Count > 0)
+    {
+        methodBuilder.AppendLine("**Throws**:".Indent(1));
+
+        foreach (var throws in method.Throws)
+        {
+            methodBuilder.AppendLine($"- {TypeDisplay(throws.Type)} - {throws.Description.Indent(1).Trim()}".Indent(1));
+        }
+
+        methodBuilder.AppendLine();
+    }
+
+    if (method.Returns != null)
+    {
+        methodBuilder.AppendLine($"**Returns**: {TypeDisplay(method.Returns.Type)} - {method.Returns.Description.Indent(1).Trim()}".Indent(1));
+    }
+
+    return methodBuilder.ToString();
+}
+
+string HeaderId(string id)
+{
+    return config.IncludeHeaderIds ? $":id={id.ToLower()}" : string.Empty;
+}
+
+string TypeDisplay(string? typeName)
+{
+    typeName ??= "Any";
+    return ahkClasses.ContainsKey(typeName) ? $"[`{typeName}`]({typeName.ToDocUri(true)})" : $"`{typeName}`";
 }
 
 static Function ImportJsDocParser(Engine jsEngine)

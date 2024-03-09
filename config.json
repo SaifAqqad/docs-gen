@@ -1,0 +1,7 @@
+﻿{
+  "JsonFile": "classes.json",
+  "OutputDir": "./classes",
+  "OutputProcessedJson": true,
+  "IncludeHeaderIds": true,
+  "BaseUri": "/classes"
+}

@@ -49,11 +49,16 @@ public record AhkParameter
 
     public string Description { get; set; } = null!;
 
-    public string Type { get; set; } = null!;
+    public string? Type { get; set; }
 
     public bool IsOptional { get; set; }
 
     public string? DefaultValue { get; set; }
+
+    public override string ToString()
+    {
+        return $"{Name}{(IsOptional ? $" := {DefaultValue}" : string.Empty)}";
+    }
 }
 
 public record AhkValue
