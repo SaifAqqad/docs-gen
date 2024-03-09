@@ -1,4 +1,4 @@
-namespace docs_gen;
+namespace docs_gen.Models;
 
 public record AhkClass
 {
@@ -40,7 +40,7 @@ public record AhkProperty
 
     public string Type { get; set; } = null!;
 
-    public bool IsStatic { get; set; }
+    public bool Static { get; set; }
 }
 
 public record AhkParameter

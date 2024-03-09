@@ -1,6 +1,6 @@
 ﻿using System.Text;
 
-namespace docs_gen;
+namespace docs_gen.Extensions;
 
 public static class DocStringExtensions
 {

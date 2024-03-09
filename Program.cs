@@ -1,4 +1,5 @@
-﻿using docs_gen;
+﻿using docs_gen.Extensions;
+using docs_gen.Models;
 using Jint;
 using Jint.Native;
 using Jint.Native.Function;
@@ -90,9 +91,9 @@ foreach (var (className, ahkClass) in ahkClasses)
         {
             classDoc.AppendLine(
                 $"""
-                 * #### {(property.IsStatic ? "**Static** " : string.Empty)}`{property.Name}` : {TypeDisplay(property.Type)} {HeaderId($"{(property.IsStatic ? "static-" : string.Empty)}{property.Name}")}
-                 {property.Description.Indent(1)}
-                 """.Trim()
+                     * #### {(property.Static ? "**Static** " : string.Empty)}`{property.Name}` : {TypeDisplay(property.Type)} {HeaderId($"{(property.Static ? "static-" : string.Empty)}{property.Name}")}
+                     {property.Description.Indent(1)}
+                     """.Trim()
             );
         }
     }
@@ -317,7 +318,7 @@ List<AhkProperty> ProcessAhkProperties(JsonArray? properties)
         var property = new AhkProperty
         {
             Name = propertyJson!["name"]!.ToString(),
-            IsStatic = propertyJson["static"]?.GetValue<bool>() ?? false
+            Static = propertyJson["static"]?.GetValue<bool>() ?? false
         };
 
         // Exclude private properties

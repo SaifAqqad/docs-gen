@@ -1,4 +1,4 @@
-﻿namespace docs_gen;
+﻿namespace docs_gen.Models;
 
 public record Config
 {

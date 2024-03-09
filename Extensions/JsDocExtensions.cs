@@ -1,6 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 
-namespace docs_gen;
+namespace docs_gen.Extensions;
 
 public static partial class JsDocExtensions
 {
