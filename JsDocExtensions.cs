@@ -1,18 +1,19 @@
-﻿using System.Text;
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 
 namespace docs_gen;
 
 public static partial class JsDocExtensions
 {
-    public static string FormatAsJsDoc(this string str) =>
-        $"""
-         /**
-          * {str.ReplaceLineEndings("\n * ")}
-          */
-         """.ReplaceLineEndings("\n");
+    public static string FormatAsJsDoc(this string str)
+    {
+        return $"""
+                /**
+                 * {str.ReplaceLineEndings("\n * ")}
+                 */
+                """.NormalizeLineEndings();
+    }
 
-    public static string AsDescription(this string str)
+    public static string ParseDescription(this string str)
     {
         str = JsDocLinkRegex().Replace(str, match =>
         {
@@ -27,29 +28,29 @@ public static partial class JsDocExtensions
             var symbol = match.Groups["symbol"].Value;
             var isStaticSymbol = string.IsNullOrWhiteSpace(match.Groups["instance"].Value);
 
-            return $"[{(string.IsNullOrWhiteSpace(display) ? symbol : display)}]({ToUri(symbol, isStaticSymbol)})";
+            return $"[{(string.IsNullOrWhiteSpace(display) ? symbol : display)}]({symbol.ToDocUri(isStaticSymbol)})";
         });
 
-        return str.Trim();
+        return str.Trim('-', '_', ' ', '\n', '\t');
     }
 
-    public static string ToUri(this string symbol, bool isStatic)
+    public static (string? Uri, string? DisplayName) ParseLink(this string str)
     {
-        var symbolParts = symbol.ToLower().Split('.');
-        var uriBuilder = new StringBuilder("/classes/").Append(symbolParts[0]);
-
-        if (symbolParts.Length > 1)
+        var match = JsDocLinkRegex().Match(str);
+        if (!match.Success)
         {
-            uriBuilder.Append("?id=");
-            if (isStatic)
-            {
-                uriBuilder.Append("static-");
-            }
-
-            uriBuilder.Append(symbolParts[1]);
+            return (null, null);
         }
 
-        return uriBuilder.ToString();
+        var display = string.IsNullOrWhiteSpace(match.Groups["display"].Value) ? null : match.Groups["display"].Value;
+        if (match.Groups["url"].Success)
+        {
+            return (match.Groups["url"].Value, display);
+        }
+
+        var symbol = match.Groups["symbol"].Value;
+        var isStaticSymbol = string.IsNullOrWhiteSpace(match.Groups["instance"].Value);
+        return (symbol.ToDocUri(isStaticSymbol), display);
     }
 
     [GeneratedRegex(@"{@link\s+(?:(?<url>https?:\/\/\S+)|(?:(?<instance>@?)(?<symbol>[\w._]+)))(?:(?:\s+|\|)(?<display>.+?))?}", RegexOptions.Compiled)]
