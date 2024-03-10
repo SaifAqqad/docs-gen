@@ -60,13 +60,14 @@ if (config.OutputProcessedJson)
     Console.WriteLine($"Processed JSON written to {processedJsonPath}");
 }
 
-foreach (var (className, ahkClass) in ahkClasses)
+await Parallel.ForEachAsync(ahkClasses, async (value, token) =>
 {
+    var (className, ahkClass) = value;
     var classDoc = new StringBuilder(
-        $$"""
-          # `{{className}}`  <!-- {docsify-ignore-all} -->
+        $"""
+          # `{className}`
 
-          {{ahkClass.Description.Indent(1)}}
+          {ahkClass.Description.Indent(1)}
           """
     ).AppendLine();
 
@@ -103,7 +104,10 @@ foreach (var (className, ahkClass) in ahkClasses)
         classDoc.AppendLine("\n## Methods");
         foreach (var method in ahkClass.Methods)
         {
-            var header = $"* ### `{method.Name}({string.Join(", ", method.Parameters)})` {HeaderId($"{(method.Static ? "static-" : string.Empty)}{method.Name}")}";
+            var parameters = string.Join(", ", method.Parameters);
+            var header = method.Static ? $"* ### **Static** `{method.Name}({parameters}) {HeaderId($"static-{method.Name}")}`"
+                : $"* ### `{method.Name}({parameters}) {HeaderId(method.Name)}`";
+
             classDoc.AppendLine(MethodDocs(method, header));
             classDoc.AppendLine("\n______");
         }
@@ -114,9 +118,9 @@ foreach (var (className, ahkClass) in ahkClasses)
         .NormalizeLineEndings()
         .Trim('_', '-', ' ', '\t', '\n');
 
-    File.WriteAllText(classFilePath, markdownContent);
+    await File.WriteAllTextAsync(classFilePath, markdownContent, token);
     Console.WriteLine($"Docs for {className} written to {classFilePath}");
-}
+});
 
 return 0;
 
